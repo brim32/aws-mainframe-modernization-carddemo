@@ -166,6 +166,7 @@
        01 WS-MISC-VARS.                                                         
            05 WS-LAST-ACCT-NUM          PIC X(11) VALUE SPACES.                 
            05 WS-MONTHLY-INT            PIC S9(09)V99.                          
+           05 WS-MONTHLY-FEE            PIC S9(09)V99.                          
            05 WS-TOTAL-INT              PIC S9(09)V99.                          
            05 WS-FIRST-TIME             PIC X(01) VALUE 'Y'.                    
        01 WS-COUNTERS.                                                          
@@ -516,7 +517,58 @@
                                                                                 
       *---------------------------------------------------------------*         
        1400-COMPUTE-FEES.                                                       
-      * To be implemented                                                       
+      * Monthly category fee: 0.25 percent of the category balance.            
+      * Added to the same total that 1050-UPDATE-ACCOUNT posts.                
+           COMPUTE WS-MONTHLY-FEE                                               
+            = (TRAN-CAT-BAL * 0.25) / 100                                       
+                                                                                
+           ADD WS-MONTHLY-FEE TO WS-TOTAL-INT                                   
+           PERFORM 1400-B-WRITE-FEE-TX.                                         
+                                                                                
+           EXIT.                                                                
+      *---------------------------------------------------------------*         
+       1400-B-WRITE-FEE-TX.                                                     
+           ADD 1 TO WS-TRANID-SUFFIX                                            
+                                                                                
+           STRING PARM-DATE,                                                    
+                  WS-TRANID-SUFFIX                                              
+             DELIMITED BY SIZE                                                  
+             INTO TRAN-ID                                                       
+           END-STRING.                                                          
+                                                                                
+           MOVE '01'                 TO TRAN-TYPE-CD                            
+           MOVE '06'                 TO TRAN-CAT-CD                             
+           MOVE 'System'             TO TRAN-SOURCE                             
+           STRING 'Fee for a/c ' ,                                              
+                  ACCT-ID                                                       
+                  DELIMITED BY SIZE                                             
+            INTO TRAN-DESC                                                      
+           END-STRING                                                           
+           MOVE WS-MONTHLY-FEE       TO TRAN-AMT                                
+           MOVE 0                    TO TRAN-MERCHANT-ID                        
+           MOVE SPACES               TO TRAN-MERCHANT-NAME                      
+           MOVE SPACES               TO TRAN-MERCHANT-CITY                      
+           MOVE SPACES               TO TRAN-MERCHANT-ZIP                       
+           MOVE XREF-CARD-NUM        TO TRAN-CARD-NUM                           
+           PERFORM Z-GET-DB2-FORMAT-TIMESTAMP                                   
+           MOVE DB2-FORMAT-TS        TO TRAN-ORIG-TS                            
+           MOVE DB2-FORMAT-TS        TO TRAN-PROC-TS                            
+                                                                                
+           WRITE FD-TRANFILE-REC FROM TRAN-RECORD                               
+           IF  TRANFILE-STATUS   = '00'                                         
+               MOVE 0 TO APPL-RESULT                                            
+           ELSE                                                                 
+               MOVE 12 TO APPL-RESULT                                           
+           END-IF                                                               
+                                                                                
+           IF  APPL-AOK                                                         
+               CONTINUE                                                         
+           ELSE                                                                 
+               DISPLAY 'ERROR WRITING FEE TRANSACTION RECORD'                   
+               MOVE TRANFILE-STATUS   TO IO-STATUS                              
+               PERFORM 9910-DISPLAY-IO-STATUS                                   
+               PERFORM 9999-ABEND-PROGRAM                                       
+           END-IF                                                               
            EXIT.                                                                
       *---------------------------------------------------------------*         
        9000-TCATBALF-CLOSE.                                                     
